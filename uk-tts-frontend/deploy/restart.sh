@@ -58,7 +58,7 @@ done
 probe() {
   curl -sf -X POST "http://127.0.0.1:${STRESS_API_PORT:-8080}/v1/stress" -H 'Content-Type: application/json' \
     -d '{"text": "Мої сестри прийшли додому."}' 2>/dev/null \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin); t=[x for x in d["tokens"] if x["text"]=="сестри"]; sys.exit(0 if t and t[0].get("status") in ("morphology","combiner") and not d.get("warnings") else 1)'
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); t=[x for x in d["tokens"] if x["text"]=="сестри"]; sys.exit(0 if t and t[0].get("status") in ("morphology","combiner") and not d.get("warnings") else 1)' 2>/dev/null
 }
 # The probe also goes through the combiner when it is on: its first call loads
 # the classifier over every form and can outlast the API's budget, and a

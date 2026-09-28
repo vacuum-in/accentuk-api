@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -97,6 +98,13 @@ func run(logger *slog.Logger) error {
 	} else if suffixes != nil {
 		server.SetSuffixTable(suffixes)
 		logger.Info("suffix fallback enabled", "path", cfg.SuffixTable)
+	}
+	// LEXICON_CANARY: comma-separated words readiness requires the lexicon
+	// to hold; "none" turns the check off. Unset keeps the built-in list.
+	if canary := os.Getenv("LEXICON_CANARY"); canary == "none" {
+		server.SetLexiconCanary(nil)
+	} else if canary != "" {
+		server.SetLexiconCanary(strings.Split(canary, ","))
 	}
 	if cfg.ModelURL != "" {
 		resolver, resolverErr := httpapi.NewHTTPContextResolverWithTimeouts(

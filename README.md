@@ -56,22 +56,38 @@ On CPU a ~115-character line takes about 139 ms without the combiner and about 1
 
 ## Running it
 
-The datasets are not in this repository: the lexicon database, the training
-corpora, the test sets, and the reviewed corrections.
+On a Linux x86-64 host with Docker (compose v2), `curl`, `python3` and `unzip`, about 30 GB of free disk and 16 GB of RAM (no GPU needed):
 
-To build the lexicon:
+```bash
+git clone https://github.com/vacuum-in/accentuk && cd accentuk
+uk-tts-frontend/deploy/install.sh
+```
 
-1. Follow the quick start in [`wiki-stress/README.md`](wiki-stress/README.md). It imports the Ukrainian Wiktionary dump and the `ukrainian-word-stress` dictionary into PostgreSQL.
-2. Download the models from Hugging Face.
-3. Deploy with [`uk-tts-frontend/deploy`](uk-tts-frontend/deploy) and start it with `deploy/restart.sh`.
+`install.sh` does the whole deployment:
 
-`wiki-stress/db/lexicon_archive.sh` exports and imports a built lexicon as gzip CSV files. Use it to move a lexicon between hosts.
+1. It downloads the models from Hugging Face into `assets/` and the tagger `uk_core_news_trf` 3.8.0 from `explosion/spacy-models`.
+2. It downloads the lexicon and its lookup tables from the [`data-v1` release](https://github.com/vacuum-in/accentuk/releases/tag/data-v1).
+3. It builds the images and restores the lexicon into a fresh PostgreSQL volume.
+4. It starts the stack, checks it, and stresses a probe sentence.
 
-Without the reviewed corrections the service will differ slightly from the numbers above.
+When it finishes, the stress API is on port 8080, the TTS frontend on 8000 and the UI on 7861:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/prepare -H 'Content-Type: application/json' \
+  -d '{"text": "О 7:45 ранку 3 квітня потяг № 12 прибув до Львова."}'
+```
+
+To run a second stack beside the first, set `COMPOSE_PROJECT_NAME`, `POSTGRES_VOLUME`, `IMAGE_TAG` and the `*_PORT` variables before running `install.sh`. Settings live in `uk-tts-frontend/deploy/.env` (see `.env.example`). Restart with `uk-tts-frontend/deploy/restart.sh`: it checks that the manifest and the lexicon agree, and waits until every tier answers.
+
+The API's `/health/ready` fails with `lexicon_incomplete` when the database lacks everyday words. That is the sign of the wrong lexicon, which would otherwise be served silently with a positional default stress.
+
+The lexicon in the release is what the service reads. It includes the reviewed corrections, so the numbers above apply. To rebuild it from its sources instead, follow the quick start in [`wiki-stress/README.md`](wiki-stress/README.md). `wiki-stress/db/lexicon_archive.sh` exports and imports a lexicon as gzip CSV files.
+
+The training corpora and test sets are not published.
 
 ## Licence
 
-Apache-2.0 for the code in this repository (see `LICENSE`). The data sources keep their own licences:
+Apache-2.0 for the code in this repository (see `LICENSE`). The lexicon in the data release is built from these sources, which keep their own licences:
 - the Ukrainian Wiktionary is CC BY-SA 4.0;
 - `ukrainian-word-stress` is MIT;
 - the lang-uk resources carry their own terms.

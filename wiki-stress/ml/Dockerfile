@@ -17,8 +17,9 @@ RUN uv pip install --system --no-cache /app/etl /app/ml
 # Only uk_core_news_trf needs this; the sm and lg pipelines do not. It is a
 # separate step so a resolver change here cannot disturb the line above.
 RUN uv pip install --system --no-cache 'spacy-curated-transformers>=0.2.2,<1.0.0'
-COPY --chown=10001:10001 models/v3-xenc /app/models/v3-xenc
-RUN useradd --create-home --uid 10001 model
+# Every model is mounted at run time (deploy/docker-compose.yml), so the
+# image builds from a clean checkout; nothing here bakes a checkpoint in.
+RUN useradd --create-home --uid 10001 model && mkdir -p /app/models && chown model /app/models
 USER model
 EXPOSE 8090
 CMD ["uvicorn", "ukstress_ml.serving:create_app", "--factory", "--host", "0.0.0.0", "--port", "8090"]

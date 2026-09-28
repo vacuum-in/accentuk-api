@@ -99,6 +99,7 @@ func newTestServer(t *testing.T) (base string, datasetID int64) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server := httpapi.New(repo, metrics.New(), logger, "contract-test",
 		testMaxTokenBytes, testMaxBatchSize, testMaxPageSize, testMaxBodyBytes)
+	server.SetLexiconCanary(nil) // the fixture lexicon holds a handful of words
 
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)

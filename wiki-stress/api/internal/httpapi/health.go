@@ -3,7 +3,18 @@ package httpapi
 import (
 	"net/http"
 	"runtime"
+	"strings"
+
+	"github.com/ukstress/ukstress/api/internal/normalize"
 )
+
+// DefaultLexiconCanary are everyday words with one stress each, which every
+// complete lexicon holds. A database that answers but lacks them is the wrong
+// lexicon, and without this check it fails silently: a deployment restored
+// from an old Wiktionary-only import served «цьо́го», «о́дин», «мето́ди» --
+// every word it missed took the positional default, readiness said "ready",
+// and no response carried a warning.
+var DefaultLexiconCanary = []string{"цього", "один", "методи", "ситуації", "наступного", "мислити"}
 
 // handleLive implements GET /health/live. Liveness stays healthy even with
 // no active dataset — the process is up, whether or not there is
@@ -26,7 +37,38 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, "not_ready", err.Error())
 		return
 	}
+	if missing, err := s.missingCanary(r); err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "not_ready", "lexicon lookup failed")
+		return
+	} else if len(missing) > 0 {
+		writeError(w, r, http.StatusServiceUnavailable, "lexicon_incomplete",
+			"the lexicon lacks everyday words ("+strings.Join(missing, ", ")+
+				"): it is not the published lexicon, or its datasets are not configured")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+// missingCanary returns the canary words the served datasets do not hold.
+func (s *Server) missingCanary(r *http.Request) ([]string, error) {
+	if len(s.canary) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, len(s.canary))
+	for i, word := range s.canary {
+		keys[i] = normalize.LookupKey(word)
+	}
+	signatures, _, _, err := s.repo.BatchSignaturesWithCase(r.Context(), keys)
+	if err != nil {
+		return nil, err
+	}
+	missing := make([]string, 0)
+	for i, key := range keys {
+		if len(signatures[key]) == 0 {
+			missing = append(missing, s.canary[i])
+		}
+	}
+	return missing, nil
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {

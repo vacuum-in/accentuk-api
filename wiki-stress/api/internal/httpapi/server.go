@@ -29,6 +29,9 @@ type Server struct {
 	// unset, in which case those words are served unstressed as before.
 	suffixes *suffixTable
 
+	// canary are words any complete lexicon holds; readiness fails without them.
+	canary []string
+
 	// combine is the default for requests that do not say: ask the learned
 	// combiner about every ambiguous token once the tier order has answered,
 	// and take its reading where it departs. A request's "combiner" wins.
@@ -48,6 +51,7 @@ func New(
 		metrics:       m,
 		logger:        logger,
 		version:       version,
+		canary:        DefaultLexiconCanary,
 		maxTokenBytes: maxTokenBytes,
 		maxBatchSize:  maxBatchSize,
 		maxPageSize:   maxPageSize,
@@ -76,6 +80,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /version", s.handleVersion)
 	return s.withMiddleware(mux)
 }
+
+// SetLexiconCanary replaces the words readiness requires the lexicon to hold;
+// nil or empty turns the check off (a test database with a handful of rows).
+func (s *Server) SetLexiconCanary(words []string) { s.canary = words }
 
 // SetCombiner sets whether requests that do not ask get the combiner.
 func (s *Server) SetCombiner(enabled bool) { s.combine = enabled }

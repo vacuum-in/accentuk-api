@@ -30,7 +30,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
 
   stress-model:
-    image: uk-tts-stress-model:latest
+    image: uk-tts-stress-model:${IMAGE_TAG:-latest}
     build:
       context: ${UKSTRESS_DIR:-../../wiki-stress}
       dockerfile: ml/Dockerfile
@@ -51,7 +51,7 @@ services:
       MKL_NUM_THREADS: ${MODEL_THREADS:-4}
       # Counted form after два/три/чотири. Needs both: the flag and a list of
       # the nouns that take it, since rewriting every noun measured worse.
-      COUNTED_FORM: "${COUNTED_FORM:-0}"
+      COUNTED_FORM: "${COUNTED_FORM:-1}"
       COUNTED_FORM_LIST: /app/models/counted_forms.json
       # The token classifier tier. Unset it and the service is what it was;
       # set, it answers for forms on its own coverage list where the pipeline
@@ -82,7 +82,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=256m
 
   api:
-    image: uk-tts-api:latest
+    image: uk-tts-api:${IMAGE_TAG:-latest}
     build:
       context: ${UKSTRESS_DIR:-../../wiki-stress}/api
     environment:
@@ -95,7 +95,7 @@ services:
       ACTIVE_INVENTORY_HASH: ${ACTIVE_INVENTORY_HASH:?set it to the manifest's inventory_hash}
       # 1 lets the learned combiner overrule the tier order (needs COMBINER_DIR).
       COMBINER_ENABLED: ${COMBINER_ENABLED:-0}
-      SUPPLEMENTARY_DATASETS: ${SUPPLEMENTARY_DATASETS:-3,5,7,9,10,12,13}
+      SUPPLEMENTARY_DATASETS: ${SUPPLEMENTARY_DATASETS:-5,7,9,10,12,13}
       # Datasets holding readings a person decided. They lead the trie's
       # default instead of losing to it — without this, a correction written
       # at full confidence is silently overruled by the statistical prior.
@@ -125,7 +125,7 @@ services:
     read_only: true
 
   frontend:
-    image: uk-tts-frontend:latest
+    image: uk-tts-frontend:${IMAGE_TAG:-latest}
     build:
       context: ..
     environment:
@@ -156,7 +156,7 @@ services:
   # It is a client of the service over the network, so what it shows is what
   # the service returns.
   ui:
-    image: uk-tts-ui:latest
+    image: uk-tts-ui:${IMAGE_TAG:-latest}
     build:
       context: ..
     command:
