@@ -1,0 +1,157 @@
+name: Publish images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      stress_model: {description: Rebuild AccentUK stress model, type: boolean, required: false, default: false}
+      api: {description: Rebuild AccentUK API, type: boolean, required: false, default: false}
+      frontend: {description: Rebuild AccentUK TTS frontend, type: boolean, required: false, default: false}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.paths.outputs.sha }}
+      stress_model: ${{ steps.paths.outputs.stress_model }}
+      api: ${{ steps.paths.outputs.api }}
+      frontend: ${{ steps.paths.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          MANUAL_MODEL: ${{ inputs.stress_model }}
+          MANUAL_API: ${{ inputs.api }}
+          MANUAL_FRONTEND: ${{ inputs.frontend }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_NAME" != workflow_dispatch || "$GITHUB_REF" == refs/heads/main ]] || { echo "Dispatch publishing is limited to main." >&2; exit 1; }
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          model=false api=false frontend=false
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$MANUAL_MODEL" == true ]] && model=true || true
+            [[ "$MANUAL_API" == true ]] && api=true || true
+            [[ "$MANUAL_FRONTEND" == true ]] && frontend=true || true
+          else
+            if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then files="$(git ls-tree -r --name-only "$SOURCE_SHA")"
+            else files="$(git diff --name-only "$BEFORE_SHA" "$SOURCE_SHA")"; fi
+            while IFS= read -r file; do
+              case "$file" in
+                wiki-stress/.dockerignore|wiki-stress/etl/*|wiki-stress/ml/*|wiki-stress/ml/uv.lock)
+                  model=true ;;
+                wiki-stress/api/*)
+                  api=true ;;
+                uk-tts-frontend/*)
+                  frontend=true ;;
+              esac
+            done <<< "$files"
+          fi
+          printf 'stress_model=%s\napi=%s\nfrontend=%s\n' "$model" "$api" "$frontend" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: [ci, detect]
+    if: needs.detect.outputs.stress_model == 'true' || needs.detect.outputs.api == 'true' || needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SOURCE_SHA: ${{ needs.detect.outputs.sha }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.detect.outputs.sha }}
+      - name: Verify ACR configuration
+        run: |
+          test -n "$ACR_NAME" || { echo "Set repository variable ACR_NAME." >&2; exit 1; }
+          test -n "$ACR_LOGIN_SERVER" || { echo "Set repository variable ACR_LOGIN_SERVER." >&2; exit 1; }
+      - uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push stress model
+        if: needs.detect.outputs.stress_model == 'true'
+        run: az acr build --registry "$ACR_NAME" --image "aloudreader/accentuk-stress-model:$SOURCE_SHA" --file ml/Dockerfile wiki-stress
+      - name: Build and push stress API
+        if: needs.detect.outputs.api == 'true'
+        run: az acr build --registry "$ACR_NAME" --image "aloudreader/accentuk-api:$SOURCE_SHA" --file Dockerfile wiki-stress/api
+      - name: Build and push TTS frontend
+        if: needs.detect.outputs.frontend == 'true'
+        run: az acr build --registry "$ACR_NAME" --image "aloudreader/accentuk-frontend:$SOURCE_SHA" --file Dockerfile uk-tts-frontend
+
+  promote:
+    needs: [detect, publish]
+    if: needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ needs.detect.outputs.sha }}
+      BUILD_MODEL: ${{ needs.detect.outputs.stress_model }}
+      BUILD_API: ${{ needs.detect.outputs.api }}
+      BUILD_FRONTEND: ${{ needs.detect.outputs.frontend }}
+      ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+    steps:
+      - uses: actions/create-github-app-token@v3.0.0
+        id: gitops-token
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: vacuum-in
+          repositories: ar-gitops
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: vacuum-in/ar-gitops
+          ref: main
+          path: gitops
+          token: ${{ steps.gitops-token.outputs.token }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.x"
+      - name: Install yq
+        env:
+          GOBIN: ${{ runner.temp }}/bin
+        run: |
+          go install github.com/mikefarah/yq/v4@v4.54.1
+          echo "$GOBIN" >> "$GITHUB_PATH"
+      - name: Update image tags
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          if [[ "$BUILD_MODEL" == true ]]; then IMAGE="$ACR_LOGIN_SERVER/aloudreader/accentuk-stress-model:$SOURCE_SHA" yq -i 'if .kind == "Deployment" and .metadata.name == "accentuk-stress-model" then .spec.template.spec.containers[0].image = strenv(IMAGE) else . end' apps/production/accentuk/stress-model.yaml; fi
+          if [[ "$BUILD_API" == true ]]; then IMAGE="$ACR_LOGIN_SERVER/aloudreader/accentuk-api:$SOURCE_SHA" yq -i 'if .kind == "Deployment" and .metadata.name == "accentuk-api" then .spec.template.spec.containers[0].image = strenv(IMAGE) else . end' apps/production/accentuk/api.yaml; fi
+          if [[ "$BUILD_FRONTEND" == true ]]; then IMAGE="$ACR_LOGIN_SERVER/aloudreader/accentuk-frontend:$SOURCE_SHA" yq -i 'if .kind == "Deployment" and .metadata.name == "accentuk-frontend" then .spec.template.spec.containers[0].image = strenv(IMAGE) else . end' apps/production/accentuk/frontend.yaml; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/production/accentuk/stress-model.yaml apps/production/accentuk/api.yaml apps/production/accentuk/frontend.yaml
+          git diff --cached --check
+          if git diff --cached --quiet; then echo "No GitOps image changes."; exit 0; fi
+          git commit -m "chore(images): promote AccentUK $SOURCE_SHA"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 2))
+          done
+          echo "Could not push the GitOps tag update after five attempts." >&2
+          exit 1

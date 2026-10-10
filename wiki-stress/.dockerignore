@@ -1,10 +1,9 @@
-# The repository root is the build context for ml/Dockerfile. Without this it
-# ships 67 GB of corpora, checkpoints and database dumps to the daemon on every
-# build; the image needs `etl`, `ml` and one model directory.
+# The repository root is the build context for ml/Dockerfile. Keep runtime
+# corpora, checkpoints and database dumps out of ACR task uploads. The image
+# needs only ETL and ML source; all models are mounted at runtime.
 *
 !etl/
 !ml/
-!models/v3-xenc/
 
 etl/.venv/
 ml/.venv/

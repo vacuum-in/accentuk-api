@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  etl:
+    name: ETL lint, typecheck, and tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ukstress
+          POSTGRES_USER: ukstress_owner
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ukstress_owner -d ukstress"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: wiki-stress/etl/pyproject.toml
+      - run: uv sync --all-groups
+        working-directory: wiki-stress/etl
+      - run: uv run ruff check src tests
+        working-directory: wiki-stress/etl
+      - run: uv run mypy src tests
+        working-directory: wiki-stress/etl
+      - run: uv run pytest tests
+        working-directory: wiki-stress/etl
+        env:
+          UKSTRESS_TEST_DATABASE_URL: postgresql://ukstress_owner:ci-only-password@localhost:5432/ukstress
+
+  model:
+    name: Stress model tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: wiki-stress/ml/uv.lock
+      - run: uv sync --all-groups
+        working-directory: wiki-stress/ml
+      - run: uv run pytest tests
+        working-directory: wiki-stress/ml
+
+  stress-api:
+    name: Stress API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: wiki-stress/api/go.mod
+          cache-dependency-path: wiki-stress/api/go.sum
+      - run: go vet ./...
+        working-directory: wiki-stress/api
+      - run: go test ./...
+        working-directory: wiki-stress/api
+      - run: go test -race ./...
+        working-directory: wiki-stress/api
+
+  frontend:
+    name: TTS frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uk-tts-frontend/pyproject.toml
+      - run: uv sync --extra service --extra dev
+        working-directory: uk-tts-frontend
+      - run: uv run ruff check src tests
+        working-directory: uk-tts-frontend
+      - run: uv run pytest -m "not slow"
+        working-directory: uk-tts-frontend
