@@ -33,14 +33,49 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - uses: actions/create-github-app-token@v3.0.0
+        id: gitops-read-token
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: vacuum-in
+          repositories: ar-gitops
+          permission-contents: read
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: vacuum-in/ar-gitops
+          ref: main
+          path: gitops
+          token: ${{ steps.gitops-read-token.outputs.token }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.x"
+      - name: Install yq
+        env:
+          GOBIN: ${{ runner.temp }}/bin
+        run: |
+          go install github.com/mikefarah/yq/v4@v4.54.1
+          echo "$GOBIN" >> "$GITHUB_PATH"
+      - id: promoted
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          model=apps/production/accentuk/stress-model.yaml
+          api=apps/production/accentuk/api.yaml
+          frontend=apps/production/accentuk/frontend.yaml
+          printf 'stress_model=%s\n' "$(yq -r 'select(.kind == "Deployment" and .metadata.name == "accentuk-stress-model") | .spec.template.spec.containers[0].image | split(":")[-1]' "$model" | head -n 1)" >> "$GITHUB_OUTPUT"
+          printf 'api=%s\n' "$(yq -r 'select(.kind == "Deployment" and .metadata.name == "accentuk-api") | .spec.template.spec.containers[0].image | split(":")[-1]' "$api" | head -n 1)" >> "$GITHUB_OUTPUT"
+          printf 'frontend=%s\n' "$(yq -r 'select(.kind == "Deployment" and .metadata.name == "accentuk-frontend") | .spec.template.spec.containers[0].image | split(":")[-1]' "$frontend" | head -n 1)" >> "$GITHUB_OUTPUT"
       - id: paths
         env:
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_SHA: ${{ github.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
           MANUAL_MODEL: ${{ inputs.stress_model }}
           MANUAL_API: ${{ inputs.api }}
           MANUAL_FRONTEND: ${{ inputs.frontend }}
+          PREVIOUS_MODEL: ${{ steps.promoted.outputs.stress_model }}
+          PREVIOUS_API: ${{ steps.promoted.outputs.api }}
+          PREVIOUS_FRONTEND: ${{ steps.promoted.outputs.frontend }}
         run: |
           set -euo pipefail
           [[ "$EVENT_NAME" != workflow_dispatch || "$GITHUB_REF" == refs/heads/main ]] || { echo "Dispatch publishing is limited to main." >&2; exit 1; }
@@ -51,18 +86,20 @@ jobs:
             [[ "$MANUAL_API" == true ]] && api=true || true
             [[ "$MANUAL_FRONTEND" == true ]] && frontend=true || true
           else
-            if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then files="$(git ls-tree -r --name-only "$SOURCE_SHA")"
-            else files="$(git diff --name-only "$BEFORE_SHA" "$SOURCE_SHA")"; fi
-            while IFS= read -r file; do
-              case "$file" in
-                wiki-stress/.dockerignore|wiki-stress/etl/*|wiki-stress/ml/*|wiki-stress/ml/uv.lock)
-                  model=true ;;
-                wiki-stress/api/*)
-                  api=true ;;
-                uk-tts-frontend/*)
-                  frontend=true ;;
-              esac
-            done <<< "$files"
+            needs_build() {
+              local previous="$1"
+              shift
+              if [[ ! "$previous" =~ ^[0-9a-f]{40}$ ]] || ! git cat-file -e "$previous^{commit}" 2>/dev/null; then
+                return 0
+              fi
+              if git diff --quiet "$previous" "$SOURCE_SHA" -- "$@"; then return 1; fi
+              return 0
+            }
+            # A failed publish leaves this artifact's GitOps SHA unchanged, so
+            # its next run includes all source changes since that promotion.
+            if needs_build "$PREVIOUS_MODEL" wiki-stress/.dockerignore ':(top,glob)wiki-stress/etl/**' ':(top,glob)wiki-stress/ml/**'; then model=true; fi
+            if needs_build "$PREVIOUS_API" ':(top,glob)wiki-stress/api/**'; then api=true; fi
+            if needs_build "$PREVIOUS_FRONTEND" ':(top,glob)uk-tts-frontend/**'; then frontend=true; fi
           fi
           printf 'stress_model=%s\napi=%s\nfrontend=%s\n' "$model" "$api" "$frontend" >> "$GITHUB_OUTPUT"
 
