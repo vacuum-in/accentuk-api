@@ -1,4 +1,7 @@
-# accentuk
+# accentuk-api
+
+> This repository is the **service**: stress API, lexicon database, model service, TTS frontend and UI, deployed with Docker.
+> The offline **Python package** (`pip install accentuk`, no server needed) lives in [vacuum-in/accentuk](https://github.com/vacuum-in/accentuk).
 
 **Stress marks for Ukrainian text-to-speech.** Given plain Ukrainian text,
 it returns the same text with U+0301 after every stressed vowel, choosing
@@ -59,14 +62,14 @@ On CPU a ~115-character line takes about 139 ms without the combiner and about 1
 On a Linux x86-64 host with Docker (compose v2), `curl`, `python3` and `unzip`, about 30 GB of free disk and 16 GB of RAM (no GPU needed):
 
 ```bash
-git clone https://github.com/vacuum-in/accentuk && cd accentuk
+git clone https://github.com/vacuum-in/accentuk-api && cd accentuk-api
 uk-tts-frontend/deploy/install.sh
 ```
 
 `install.sh` does the whole deployment:
 
 1. It downloads the models from Hugging Face into `assets/` and the tagger `uk_core_news_trf` 3.8.0 from `explosion/spacy-models`.
-2. It downloads the lexicon and its lookup tables from the [`data-v1` release](https://github.com/vacuum-in/accentuk/releases/tag/data-v1).
+2. It downloads the lexicon and its lookup tables from the [`data-v1` release](https://github.com/vacuum-in/accentuk-api/releases/tag/data-v1).
 3. It builds the images and restores the lexicon into a fresh PostgreSQL volume.
 4. It starts the stack, checks it, and stresses a probe sentence.
 

@@ -9,7 +9,7 @@
 # downloads already present are kept, and the lexicon is restored only into
 # an empty database. Settings come from the environment, else .env.example:
 #   ASSETS                 where models and data go     (default: <checkout>/assets)
-#   ACCENTUK_DATA_URL      the data release              (default: vacuum-in/accentuk data-v1)
+#   ACCENTUK_DATA_URL      the data release              (default: vacuum-in/accentuk-api data-v1)
 #   COMPOSE_PROJECT_NAME, POSTGRES_VOLUME, FRONTEND_PORT, STRESS_API_PORT,
 #   UI_PORT, POSTGRES_PORT  to run a second stack beside another
 set -euo pipefail
@@ -18,7 +18,7 @@ DEPLOY="$(cd "$(dirname "$0")" && pwd)"
 FRONTEND="$(dirname "$DEPLOY")"
 UKSTRESS_DIR="${UKSTRESS_DIR:-$(cd "$FRONTEND/.." && pwd)/wiki-stress}"
 ASSETS="${ASSETS:-$(cd "$FRONTEND/.." && pwd)/assets}"
-DATA_URL="${ACCENTUK_DATA_URL:-https://github.com/vacuum-in/accentuk/releases/download/data-v1}"
+DATA_URL="${ACCENTUK_DATA_URL:-https://github.com/vacuum-in/accentuk-api/releases/download/data-v1}"
 HF="https://huggingface.co"
 
 for tool in docker curl python3 unzip; do
