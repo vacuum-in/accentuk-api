@@ -69,7 +69,7 @@ uk-tts-frontend/deploy/install.sh
 `install.sh` does the whole deployment:
 
 1. It downloads the models from Hugging Face into `assets/` and the tagger `uk_core_news_trf` 3.8.0 from `explosion/spacy-models`.
-2. It downloads the lexicon and its lookup tables from the [`data-v1` release](https://github.com/vacuum-in/accentuk-api/releases/tag/data-v1).
+2. It downloads the lexicon and its lookup tables from the [`data-v2` release](https://github.com/vacuum-in/accentuk-api/releases/tag/data-v2).
 3. It builds the images and restores the lexicon into a fresh PostgreSQL volume.
 4. It starts the stack, checks it, and stresses a probe sentence.
 
