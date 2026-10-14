@@ -117,9 +117,77 @@ class MarianVerbalizer:
         return outputs
 
 
+class SpanVerbalizer:
+    """Span-to-span Marian on CTranslate2 (aloudreader/marian-uk-verbalizer-spans-ct2-int8).
+
+    `spans.py` finds the spans that may need reading from the shape of the characters; the model sees the chunk with
+    one span marked and writes only that span; everything outside the spans is the input, unchanged. The code puts
+    each output at its span and decides nothing about the reading -- an empty output (a footnote mark) included.
+    """
+
+    name = "marian-spans"
+
+    def __init__(self, config: VerbalizerConfig) -> None:
+        import ctranslate2
+        from transformers import MarianTokenizer
+
+        checkpoint = config.checkpoint
+        if checkpoint is None or not (checkpoint / "model.bin").is_file():
+            raise FileNotFoundError(f"no CTranslate2 span verbalizer at {checkpoint}")
+        self.config = config
+        self.device = "cuda" if config.device == "cuda" else "cpu"
+        self.tokenizer = MarianTokenizer.from_pretrained(checkpoint)
+        self.translator = ctranslate2.Translator(str(checkpoint), device=self.device, compute_type="int8")
+
+    @property
+    def checkpoint_id(self) -> dict[str, str]:
+        assert self.config.checkpoint is not None
+        return {"checkpoint": str(self.config.checkpoint), "device": self.device, "kind": "spans-ct2-int8"}
+
+    def count_tokens(self, text: str) -> int:
+        # the model reads a window around each span, so a chunk is never too long for it
+        return len(text.split())
+
+    def verbalize(self, texts: list[str]) -> list[str]:
+        from .spans import assemble, detect_spans, model_input
+
+        spans = [detect_spans(t) for t in texts]
+        inputs = [
+            self.tokenizer.convert_ids_to_tokens(
+                self.tokenizer(model_input(t, sp), truncation=True, max_length=192)["input_ids"]
+            )
+            for t, sps in zip(texts, spans)
+            for sp in sps
+        ]
+        outputs: list[str] = []
+        step = max(1, self.config.batch_size * 4)
+        for start in range(0, len(inputs), step):
+            results = self.translator.translate_batch(
+                inputs[start : start + step],
+                beam_size=1,
+                max_decoding_length=96,
+                min_decoding_length=0,  # a span may be read as nothing (a footnote mark)
+                suppress_sequences=[["<s>"]],  # this export starts decoding from <s>
+            )
+            outputs.extend(
+                self.tokenizer.decode(self.tokenizer.convert_tokens_to_ids(r.hypotheses[0]), skip_special_tokens=True)
+                for r in results
+            )
+        it = iter(outputs)
+        return [assemble(t, sps, [next(it) for _ in sps]) for t, sps in zip(texts, spans)]
+
+
+def is_span_checkpoint(path: Path | None) -> bool:
+    return path is not None and (path / "model.bin").is_file() and (path / "spans.py").is_file()
+
+
 def load(config: VerbalizerConfig) -> Verbalizer:
-    return MarianVerbalizer(config) if config.enabled else PassthroughVerbalizer()
+    if not config.enabled:
+        return PassthroughVerbalizer()
+    if is_span_checkpoint(config.checkpoint):
+        return SpanVerbalizer(config)
+    return MarianVerbalizer(config)
 
 
 def default_checkpoint_exists(path: Path) -> bool:
-    return (path / "config.json").is_file()
+    return (path / "config.json").is_file() or is_span_checkpoint(path)

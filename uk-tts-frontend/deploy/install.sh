@@ -49,7 +49,7 @@ echo "=== models (Hugging Face)"
 hf_get aloudreader/uk-stress-crossencoder "$ASSETS/stress-model" checkpoint
 hf_get aloudreader/uk-stress-token-classifier "$ASSETS/tok-v5"
 hf_get aloudreader/uk-stress-combiner "$ASSETS/combiner-v1"
-hf_get aloudreader/marian-uk-verbalizer "$ASSETS/verbalizer"
+hf_get aloudreader/marian-uk-verbalizer-spans-ct2-int8 "$ASSETS/verbalizer-spans"
 if [ ! -f "$ASSETS/spacy-uk_core_news_trf/config.cfg" ]; then
   # The tagger the morphology tier was measured with: 3.8.0, loaded by path.
   tmp="$(mktemp -d)"

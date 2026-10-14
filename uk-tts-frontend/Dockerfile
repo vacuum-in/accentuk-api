@@ -1,4 +1,5 @@
-# CPU image. The verbalizer checkpoint is mounted, not baked in, so a
+# CPU image. The verbalizer checkpoint (a Marian checkpoint, or the CTranslate2 span model)
+# is mounted, not baked in, so a
 # checkpoint change is a redeploy of configuration rather than of the image.
 FROM python:3.11-slim
 
