@@ -95,7 +95,7 @@ services:
       ACTIVE_INVENTORY_HASH: ${ACTIVE_INVENTORY_HASH:?set it to the manifest's inventory_hash}
       # 1 lets the learned combiner overrule the tier order (needs COMBINER_DIR).
       COMBINER_ENABLED: ${COMBINER_ENABLED:-0}
-      SUPPLEMENTARY_DATASETS: ${SUPPLEMENTARY_DATASETS:-5,7,9,10,12,13}
+      SUPPLEMENTARY_DATASETS: ${SUPPLEMENTARY_DATASETS:-5,7,9,10,12,13,16,18,19}
       # Datasets holding readings a person decided. They lead the trie's
       # default instead of losing to it — without this, a correction written
       # at full confidence is silently overruled by the statistical prior.
@@ -104,7 +104,7 @@ services:
       # candidate list to a single entry, so no contextual tier is offered the
       # form — ordering alone was not enough, because two candidates reach the
       # model and on `маю` the model chose the reading the review rejected.
-      REVIEWED_EXCLUSIVE_DATASETS: ${REVIEWED_EXCLUSIVE_DATASETS:-13}
+      REVIEWED_EXCLUSIVE_DATASETS: ${REVIEWED_EXCLUSIVE_DATASETS:-13,18}
       SUFFIX_TABLE: /etc/ukstress/suffix_table.json
       TRIE_DEFAULTS: /etc/ukstress/trie_defaults_map.json
     depends_on:
